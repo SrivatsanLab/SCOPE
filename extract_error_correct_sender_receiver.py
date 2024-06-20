@@ -190,18 +190,72 @@ def get_barcodes(sequence, bc_1_map, bc_2_map, bc_3_map, bc_4_map, SR_map, overh
             else:
                 SR = 'unmap_'+SR  # Use 'unmapped' if no distances were calculated
         
+        exact_match_or_not = [1, 1, 1, 1]
         try:
-            bc_1 = bc_1_map[bc_1]
-            bc_2 = bc_2_map[bc_2]
-            bc_3 = bc_3_map[bc_3]
-            bc_4 = bc_4_map[bc_4]
-            
+            check_index = BC_1s.index(bc_1)
+        except ValueError:
+            exact_match_or_not[0] = 0
+        try:
+            check_index = BC_2s.index(bc_2)
+        except ValueError:
+            exact_match_or_not[1] = 0
+        try:
+            check_index = BC_3s.index(bc_3)
+        except ValueError:
+            exact_match_or_not[2] = 0
+        try:
+            check_index = BC_4s.index(bc_4)
+        except ValueError:
+            exact_match_or_not[3] = 0
+        if sum(exact_match_or_not) <= 2:
+            return ['2', sequence, '', '', '']
+        elif sum(exact_match_or_not) == 4:
             corrected_bc = [bc_1 + bc_2 + bc_3 + bc_4]
-            
             return corrected_bc + [UMI, SR]
+        else:
+            if exact_match_or_not[0] == 0:
+                try:
+                    bc_1 = bc_1_map[bc_1]
+                    corrected_bc = [bc_1 + bc_2 + bc_3 + bc_4]
+                    return corrected_bc + [UMI, SR]
+                except KeyError:
+                    return ['2', sequence, '', '', '']
+            if exact_match_or_not[1] == 0:
+                try:
+                    bc_2 = bc_2_map[bc_2]
+                    corrected_bc = [bc_1 + bc_2 + bc_3 + bc_4]
+                    return corrected_bc + [UMI, SR]
+                except KeyError:
+                    return ['2', sequence, '', '', '']
+            if exact_match_or_not[2] == 0:
+                try:
+                    bc_3 = bc_3_map[bc_3]
+                    corrected_bc = [bc_1 + bc_2 + bc_3 + bc_4]
+                    return corrected_bc + [UMI, SR]
+                except KeyError:
+                    return ['2', sequence, '', '', '']
+            if exact_match_or_not[3] == 0:
+                try:
+                    bc_4 = bc_4_map[bc_4]
+                    corrected_bc = [bc_1 + bc_2 + bc_3 + bc_4]
+                    return corrected_bc + [UMI, SR]
+                except KeyError:
+                    return ['2', sequence, '', '', '']
+
+
+                    
+
+            # bc_1 = bc_1_map[bc_1]
+            # bc_2 = bc_2_map[bc_2]
+            # bc_3 = bc_3_map[bc_3]
+            # bc_4 = bc_4_map[bc_4]
+            
+            # corrected_bc = [bc_1 + bc_2 + bc_3 + bc_4]
+            
+            # return corrected_bc + [UMI, SR]
         
-        except KeyError: #will have KeyError if observed barcode not in mapping dictionary
-            return ['2', sequence, '', '', '']#if line in df has 2, bc was not able to be error corrected
+        # except KeyError: #will have KeyError if observed barcode not in mapping dictionary
+        #     return ['2', sequence, '', '', '']#if line in df has 2, bc was not able to be error corrected
     else:
       return ['1', sequence, '', '', ''] #if line in df has 1, scars did not align
 
