@@ -6,7 +6,7 @@ import igraph as ig
 def doublet_detection(input_file, threshold, output_file):
     """
     Input: a barcode interaction graph; a threshold that filters out barcodes with low degrees
-    Output: 
+    Output: a list of indexes of doublets
     """
 
     print("Start loading interaction graph!")
