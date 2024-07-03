@@ -1,6 +1,8 @@
 # OFST
 Optics Free Spatial Transcriptomics Repository
 
+![Description of the image]([https://github.com/yourusername/yourrepository/raw/main/images/example.jpg](https://github.com/SrivatsanLab/OFST/blob/main/OFST-diagram.jpeg))
+
 ### Creating an interaction matrix
 
 1. **Run `extract_error_correct_sender_receiver.py`**
