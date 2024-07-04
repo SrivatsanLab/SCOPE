@@ -3,7 +3,7 @@ Optics Free Spatial Transcriptomics Repository
 
 ![Example Image](https://raw.githubusercontent.com/SrivatsanLab/OFST/main/OFST-diagram.png?token=GHSAT0AAAAAACTRUBB254TJFQ2PNGTJ2262ZUF5BYQ)
 
-### Creating an interaction matrix
+### Error Correction & Creating an interaction matrix
 
 1. **Run `extract_error_correct_sender_receiver.py`**
 
@@ -17,3 +17,15 @@ Optics Free Spatial Transcriptomics Repository
 
    ```sh
    python find_interactions.py collapsed.csv index.json subset.csv numerical.txt interaction.txt
+
+### Doublets Detection
+1. **Run `doublet_detection.py`**
+
+   ```sh
+   python doublet_detection.py interaction_graph.graphml 1000 doublets.csv
+
+### Reconstruction of Beads Location
+1. **Run `optics-free.py`**
+
+   ```sh
+   python optics-free.py -s sample_id -i interaction.csv
