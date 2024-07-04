@@ -1,7 +1,7 @@
 # OFST
 Optics Free Spatial Transcriptomics Repository
 
-![Example Image](https://raw.githubusercontent.com/SrivatsanLab/OFST/main/OFST-diagram.png?token=GHSAT0AAAAAACTRUBB2YUOW7EQDJYTXXJR6ZUF4OBQ)
+![Example Image](https://raw.githubusercontent.com/SrivatsanLab/OFST/main/OFST-diagram.png?token=GHSAT0AAAAAACTRUBB254TJFQ2PNGTJ2262ZUF5BYQ)
 
 ### Creating an interaction matrix
 
