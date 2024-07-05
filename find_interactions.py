@@ -1,113 +1,101 @@
-import gzip
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
-import re
-import time
 import json
-import math
 import sys
+from scipy.sparse import csr_matrix
 
-
-
-
-"""load de-duplicated library to csv"""
+# load de-duplicated library to csv
 nextera_unique = pd.read_csv(sys.argv[1])
 
 
-"""get list of all unique barcodes found in R1 and R2
-"""
-all_R1_full_bcs_series = nextera_unique["R1_full_bc"].value_counts()
-all_R1_full_bcs = list(all_R1_full_bcs_series.keys())
-print(f"R1 bcs: {len(all_R1_full_bcs)}")
-
-all_R2_full_bcs_series = nextera_unique["R2_full_bc"].value_counts()
-all_R2_full_bcs = list(all_R2_full_bcs_series.keys())
-print(f"R2 bcs: {len(all_R2_full_bcs)}")
+# Calculate total counts of each barcode across both entry columns
+barcode_counts = nextera_unique[["R1_full_bc", "R2_full_bc"]].stack().value_counts()
 
 
-"""find only the intersection between R1 and R2 barcodes"""
-intersection = list(set(all_R1_full_bcs) & set(all_R2_full_bcs))
-print(f"intersection length: {len(intersection)}")
+# Filter for barcodes that appear at least x times (look at kneeplot)
+total_bc_cutoff = int(sys.argv[2])
+print(total_bc_cutoff)
+real_barcodes = barcode_counts[barcode_counts >= total_bc_cutoff].index.tolist() #used total bc counts of R1 + R2
+
+print(f"Number of barcodes after filtering: {len(real_barcodes)}")
+
+filtered_df = nextera_unique[nextera_unique['R1_full_bc'].isin(real_barcodes) & nextera_unique['R2_full_bc'].isin(real_barcodes)]
 
 
-"""map each barcode to an index"""
-bc_indices = dict()
-for i in range(len(intersection)):
-    bc = intersection[i]
-    bc_indices[bc] = i
+# Filter for barcodes that appear in both entry columns
+filtered_barcodes = []
 
-"""need to save dictionary!!"""
+barcode_set_entry1 = set(filtered_df['R1_full_bc'])
+barcode_set_entry2 = set(filtered_df['R2_full_bc'])
+filtered_barcodes = list(barcode_set_entry1.intersection(barcode_set_entry2))
 
-with open(sys.argv[2], "w") as f:
-     f.write(json.dumps(bc_indices))
-
+filtered_df = filtered_df[filtered_df['R1_full_bc'].isin(filtered_barcodes)]
+filtered_df = filtered_df[filtered_df['R2_full_bc'].isin(filtered_barcodes)]
 
 
-"""the barcode to index mapping has been saved, so we will load the dictionary from the same file every time"""
+# Getting matrix of interactions
+interaction_df = filtered_df.groupby(["R1_full_bc", "R2_full_bc"]).size().reset_index().rename(columns={0:'count'})
 
-with open(sys.argv[2]) as json_file:
-    barcode_indices = json.load(json_file)
+# Create a set to store unique barcodes
+unique_barcodes = set()
+
+# Mapping dictionary to store the relationship between barcode and integer
+barcode_to_integer_mapping = {}
+
+# Function to replace barcodes with unique integers and update the mapping dictionary
+def replace_with_integer(barcode):
+    if barcode not in unique_barcodes:
+        unique_barcodes.add(barcode)
+        barcode_to_integer_mapping[barcode] = len(unique_barcodes) - 1
+    return barcode_to_integer_mapping[barcode]
+
+# Apply the function to each element in the specified columns
+interaction_df['R1_full_bc'] = interaction_df['R1_full_bc'].apply(replace_with_integer)
+interaction_df['R2_full_bc'] = interaction_df['R2_full_bc'].apply(replace_with_integer)
+
+# save file
+interaction_df.to_csv(sys.argv[3])
+
+
+# write a json file with barcode to numerical index matching
+
+with open(sys.argv[4], "w") as f:
+     f.write(json.dumps(barcode_to_integer_mapping))
+
+
+# Create a sparse matrix
+sparse_matrix = csr_matrix((interaction_df['count'], (interaction_df['R1_full_bc'], interaction_df['R2_full_bc'])))
+
+# Randomly sample 18 beads for plotting
+sampled_num = 18
+total_num_beads = sparse_matrix.shape[0]
+random_sampled_beads = np.random.choice([*range(total_num_beads)], size=sampled_num, replace=False)
+
+fig, axs = plt.subplots(3, 6, figsize=(16, 8))
+
+axs = axs.flatten()
+
+for i in range(sampled_num):
     
-print(f"# of bc indices: {len(barcode_indices)}")
+    interactions = sparse_matrix.getrow(random_sampled_beads[i]).toarray().flatten()
+    non_zero_interactions = sorted(interactions[interactions != 0])[::-1]
+    
+    axs[i].scatter([*range(len(non_zero_interactions))], non_zero_interactions)
+    axs[i].set_title(f'Bead {random_sampled_beads[i]}')
+    
+plt.tight_layout()
 
-
-"""filter the UMI-collapsed dataframe based on barcodes that appear in the intersection"""
-"""
-this filtering step actually doesn't change the size of the dataframe by much,
-so we aren't losing too much information from the left-out barcodes 
-"""
-
-subset_nextera_unique = nextera_unique[nextera_unique['R1_full_bc'].isin(intersection)]
-subset_nextera_unique = subset_nextera_unique[subset_nextera_unique['R2_full_bc'].isin(intersection)]
-print(f"# of bc after filter for intersection: {len(subset_nextera_unique)}")
-
-subset_nextera_unique.to_csv(sys.argv[3], index=False)
-
-"""
-Create new output file
-Read dataframe with barcode strings line by line
-Write the barcodes' integer IDs into a new line in the output file
-Took around 80 seconds for a dataframe with 55612401 lines
-"""
-
-replaced_bc_file = open(sys.argv[4], "w")
-replaced_bc_file.write("R1_bc,R2_bc\n")
-
-start = time.time()
-with open(sys.argv[3], "r") as f:
-    next(f)
-    for line in f:
-        index, R1_full_bc, R1_UMI, sender, R2_UMI, R2_full_bc = line.rstrip().split(",")
-        replaced_bc_file.write(f"{barcode_indices[R1_full_bc]},{barcode_indices[R2_full_bc]}\n")
-
-end = time.time()
-replaced_bc_file.close()  
-print(end-start)
-
-
-
-"""load dataframe with barcode-->integer associations"""
-
-replaced_nextera_df = pd.read_csv(sys.argv[4], index_col=None)
-
-
-
-nextera_interaction_df = replaced_nextera_df.groupby(["R1_bc", "R2_bc"]).size().reset_index().rename(columns={0:'count'})
-
-
-nextera_interaction_df.to_csv(sys.argv[5], index=False)
-
+plt.savefig(sys.argv[5], format='pdf')
 
 
 """
 
-sys.argv[1]: deduplicated lib to load (csv)
-sys.argv[2]: output json .txt file with barcode to numerical index matching
-sys.argv[3]: subset the library to only include barcodes that appear in both R1 and R2 (.csv)
-sys.argv[4]: the library's barcode strings have been replaced with numerical indices (.txt file)
-sys.argv[5]: interactions.txt output filename
+sys.argv[1]: deduplicated lib to load (.csv)
+sys.argv[2]: threshold for filtering barcodes (int)
+sys.argv[3]: interactions.csv output filename (.csv)
+sys.argv[4]: output .json file with barcode to numerical index matching (.json)
+sys.argv[5]: the library's barcode strings have been replaced with numerical indices (.txt file)
 
 """
 
