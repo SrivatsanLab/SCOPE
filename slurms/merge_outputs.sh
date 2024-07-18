@@ -12,8 +12,8 @@
 #SBATCH --mail-user=yhuang5@fredhutch.org
 
 # Define output directory and merged output file
-MERGED_OUTPUT_DIR="chunks_output"
-MERGED_OUTPUT="${MERGED_OUTPUT_DIR}/final_output.csv"
+MERGED_OUTPUT_DIR="chunks_output_new"
+MERGED_OUTPUT="${MERGED_OUTPUT_DIR}/merged_output.csv"
 
 # Merge all individual output files into a single file
 cat ${MERGED_OUTPUT_DIR}/output_*.csv > $MERGED_OUTPUT
