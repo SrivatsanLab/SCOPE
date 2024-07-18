@@ -18,3 +18,4 @@ MERGED_OUTPUT="${MERGED_OUTPUT_DIR}/merged_output.csv"
 # Merge all individual output files into a single file
 cat ${MERGED_OUTPUT_DIR}/output_*.csv > $MERGED_OUTPUT
 
+python merge_dict.py
