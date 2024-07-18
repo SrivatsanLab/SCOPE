@@ -8,4 +8,4 @@
 #SBATCH --mail-type=END,FAIL    
 #SBATCH --mail-user=yhuang5@fredhutch.org
 
-python UMI_collapse.py final_output2.csv chunks_output/collapsed_2.csv collapsed_2.pdf
+python UMI_collapse.py chunks_output_new/merged_output.csv chunks_output_new/collapsed.csv chunks_output_new/collapsed.png
