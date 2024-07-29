@@ -12,7 +12,7 @@ BC_3s = list()
 BC_4s = list()
 
 # Read in barcodes library
-with open("/fh/fast/srivatsan_s/pub/public_scripts/spatial_scripts/barcodes_only.txt", "r") as f:
+with open("test/barcodes_only.txt", "r") as f:
     for line in f:
         BC, position = line.rstrip().split("\t")
         if position == "1":
@@ -27,7 +27,7 @@ with open("/fh/fast/srivatsan_s/pub/public_scripts/spatial_scripts/barcodes_only
 # Read in SR libraries
 SRs = list()
 
-with open("/fh/fast/srivatsan_s/pub/public_scripts/spatial_scripts/20240621_nupack_seq_in_use.txt", "r") as f:
+with open("test/20240621_nupack_seq_in_use.txt", "r") as f:
     for line in f:
         SR = line.rstrip().split("\t")[0]
         SRs.append(SR)
@@ -35,8 +35,8 @@ with open("/fh/fast/srivatsan_s/pub/public_scripts/spatial_scripts/20240621_nupa
 print("Barcodes and SR sequences loaded")
 
 
-SR_map = {SRs[i]: SRs[i+20] for i in range(20)}
-SR_map.update({SRs[i+20]: SRs[i] for i in range(20)})
+# SR_map = {SRs[i]: SRs[i+20] for i in range(20)}
+# SR_map.update({SRs[i+20]: SRs[i] for i in range(20)})
     
 
 def pairwise_levenshtein_distances(string, vector_of_strings):
@@ -111,13 +111,13 @@ def get_barcodes(sequence, overhang):
     else:
         return ['1', '', ''] #if line in df has 1, scars did not align
 
-def process_chunk(R1_filename, R2_filename, output_filename, dict_filename, start_sequence, num_sequences):
+def process_chunk(R1_filename, R2_filename, output_filename, start_sequence, num_sequences):
     # Initialize statistics
     scars_unaligned = 0
     bc_uncorrected = 0
     SR_uncorrected = 0
     reads_mapped = 0
-    SR_distribution = defaultdict(lambda: [0] * 20)
+    # SR_distribution = defaultdict(lambda: [0] * 20)
 
     with gzip.open(R1_filename, "rt") as f1, gzip.open(R2_filename, "rt") as f2, open(output_filename, "w") as output_f:
         # Skip to the start sequence
@@ -148,8 +148,8 @@ def process_chunk(R1_filename, R2_filename, output_filename, dict_filename, star
                     SR = seq1_data[2]
                     result_line = f"{seq1_data[0]}\t{seq1_data[1]}\t{SR}\t{seq2_data[2]}\t{seq2_data[1]}\n"
                     output_f.write(result_line)
-                    SR_distribution[seq1_data[0]][SRs.index(SR)%20] += 1
-                    SR_distribution[seq2_data[1]][SRs.index(SR)%20] += 1
+                    # SR_distribution[seq1_data[0]][SRs.index(SR)%20] += 1
+                    # SR_distribution[seq2_data[1]][SRs.index(SR)%20] += 1
                     reads_mapped += 1
                     
                 elif seq2_data[0] != '3':
@@ -157,8 +157,8 @@ def process_chunk(R1_filename, R2_filename, output_filename, dict_filename, star
                     SR = SR_map[SR]
                     result_line = f"{seq1_data[1]}\t{seq1_data[2]}\t{SR}\t{seq2_data[1]}\t{seq2_data[0]}\n"
                     output_f.write(result_line)
-                    SR_distribution[seq1_data[1]][SRs.index(SR)%20] += 1
-                    SR_distribution[seq2_data[0]][SRs.index(SR)%20] += 1
+                    # SR_distribution[seq1_data[1]][SRs.index(SR)%20] += 1
+                    # SR_distribution[seq2_data[0]][SRs.index(SR)%20] += 1
                     reads_mapped += 1
                 else:
                     SR_uncorrected += 1
@@ -166,8 +166,8 @@ def process_chunk(R1_filename, R2_filename, output_filename, dict_filename, star
                 SR = seq1_data[2]
                 result_line = f"{seq1_data[0]}\t{seq1_data[1]}\t{SR}\t{seq2_data[1]}\t{seq2_data[0]}\n"
                 output_f.write(result_line)
-                SR_distribution[seq1_data[0]][SRs.index(SR)%20] += 1
-                SR_distribution[seq2_data[0]][SRs.index(SR)%20] += 1
+                # SR_distribution[seq1_data[0]][SRs.index(SR)%20] += 1
+                # SR_distribution[seq2_data[0]][SRs.index(SR)%20] += 1
                 reads_mapped += 1
             
     
@@ -175,11 +175,11 @@ def process_chunk(R1_filename, R2_filename, output_filename, dict_filename, star
     print(f"Uncorrected bc: {bc_uncorrected}")
     print(f"Uncorrected SR: {SR_uncorrected}")
     print(f"Mapped reads: {reads_mapped}")
-    print(len(SR_distribution))
+    # print(len(SR_distribution))
 
-    # Save SR_distribution to CSV
-    df = pd.DataFrame.from_dict(SR_distribution, orient='index')
-    df.to_csv(dict_filename, index=True, header=False)
+    # # Save SR_distribution to CSV
+    # df = pd.DataFrame.from_dict(SR_distribution, orient='index')
+    # df.to_csv(dict_filename, index=True, header=False)
 
 
 
@@ -191,6 +191,6 @@ if __name__ == "__main__":
     start_sequence = int(sys.argv[5])
     num_sequences = int(sys.argv[6])
     
-    process_chunk(R1_filename, R2_filename, output_filename, dict_filename, start_sequence, num_sequences)
+    process_chunk(R1_filename, R2_filename, output_filename, start_sequence, num_sequences)
 
 
