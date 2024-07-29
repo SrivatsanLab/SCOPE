@@ -39,4 +39,4 @@ fi
 OUTPUT_FILE="${OUTPUT_DIR}/output_${TASK_ID}.csv"
 
 # Run the process_chunk script
-python process_chunk.py $R1_INPUT $R2_INPUT $OUTPUT_FILE $start_sequence $num_sequences
+python ../process_chunk.py $R1_INPUT $R2_INPUT $OUTPUT_FILE $start_sequence $num_sequences
