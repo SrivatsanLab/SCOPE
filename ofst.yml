@@ -1,0 +1,15 @@
+name: ofst
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python-levenshtein
+  - pandas
+  - matplotlib
+  - scikit-learn
+  - igraph
+  - python-igraph
+  - leidenalg
+  - tqdm
+  - alphashape
+prefix: /home/yhuang5/miniconda3/envs/spacev2
