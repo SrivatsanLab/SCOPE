@@ -12,7 +12,7 @@ BC_3s = list()
 BC_4s = list()
 
 # Read in barcodes library
-with open("test/barcodes_only.txt", "r") as f:
+with open("test/barcodes.txt", "r") as f:
     for line in f:
         BC, position = line.rstrip().split("\t")
         if position == "1":
@@ -27,7 +27,7 @@ with open("test/barcodes_only.txt", "r") as f:
 # Read in SR libraries
 SRs = list()
 
-with open("test/20240621_nupack_seq_in_use.txt", "r") as f:
+with open("test/SRs.txt", "r") as f:
     for line in f:
         SR = line.rstrip().split("\t")[0]
         SRs.append(SR)
