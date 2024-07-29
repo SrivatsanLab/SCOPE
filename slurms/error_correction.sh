@@ -7,9 +7,9 @@
 #SBATCH --cpus-per-task=1
 
 # Define input and output directories
-R1_INPUT="../test/R1.fastq.gz"
-R2_INPUT="../test/R2.fastq.gz"
-OUTPUT_DIR="../test"
+R1_INPUT="test/R1.fastq.gz"
+R2_INPUT="test/R2.fastq.gz"
+OUTPUT_DIR="test"
 
 mkdir -p $OUTPUT_DIR
 
@@ -39,4 +39,4 @@ fi
 OUTPUT_FILE="${OUTPUT_DIR}/output_${TASK_ID}.csv"
 
 # Run the process_chunk script
-python ../process_chunk.py $R1_INPUT $R2_INPUT $OUTPUT_FILE $start_sequence $num_sequences
+python process_chunk.py $R1_INPUT $R2_INPUT $OUTPUT_FILE $start_sequence $num_sequences
