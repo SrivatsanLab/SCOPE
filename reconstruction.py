@@ -21,8 +21,8 @@ from scipy.spatial import Delaunay
 from scipy.spatial.distance import euclidean
 from scipy.optimize import basinhopping
 
-sys.path.append('/net/gs/vol1/home/sanjayk/srivatsan/sci-space-v2')
-from ssv2.simulation import BaseSimulation
+# sys.path.append('/net/shendure/vol8/projects/sanjayk/srivatsan/sci-space-v2')
+from simulation import BaseSimulation
 
 from scipy.sparse import csr_matrix
 
@@ -48,14 +48,51 @@ import argparse
 import scanpy as sc
 from scipy.optimize import linear_sum_assignment
 
+from sklearn.cluster import SpectralClustering
+
+from scipy.cluster.hierarchy import linkage, fcluster
+from sklearn.cluster import AgglomerativeClustering
+
+import subprocess
+import time
+
 mpl.rcParams['figure.dpi'] = 500
 np.random.seed(0)
 
+import warnings
+warnings.filterwarnings('ignore')
+
+import functools
+print = functools.partial(print, flush=True)
+
+from shapely.geometry import Polygon, Point, LineString, MultiPolygon
+from shapely.ops import unary_union
+
+from collections import defaultdict
+from matplotlib.patches import Polygon as mplPolygon
+from scipy.stats import chisquare
+
+from shapely.geometry import Polygon, Point
+from shapely.ops import unary_union
+from scipy.spatial import Delaunay
+import shapely.errors
+
+from sklearn.neighbors import KernelDensity
+
+
+def flatten(xss):
+    return [x for xs in xss for x in xs]
 
 
 def create_sparse_matrix_from_file(file_path, r1='R1_full_bc', r2='R2_full_bc', count='count'):
-    df = pd.read_csv(file_path)
-
+    if file_path.endswith(".csv"):
+        df = pd.read_csv(file_path)
+    else:
+        df = pd.read_csv(file_path, sep="\t", header=None)
+        r1=0
+        r2=1
+        count=2
+    
     unique = np.unique(list(df[r1].values)+list(df[r2].values))
     mapping = dict(zip(unique,list(range(len(unique)))))
 
@@ -73,8 +110,9 @@ def create_sparse_matrix_from_file(file_path, r1='R1_full_bc', r2='R2_full_bc', 
     # Determine the shape of the matrix
     nrows = row_indices.max() + 1
     ncols = col_indices.max() + 1
+    len_unique = len(unique)
 
-    sp = csr_matrix((values, (row_indices, col_indices)), shape=(nrows, ncols))
+    sp = csr_matrix((values, (row_indices, col_indices)), shape=(len_unique, len_unique))
     # Create and return the sparse matrix
     return sp, unique
 
@@ -89,27 +127,108 @@ def similarity_distance_mapping(dir, counts_sp):
     counts_sp = (counts_sp + counts_sp.T)/2
     counts_sp = csr_matrix(counts_sp)
     #sparse_df = pd.DataFrame.sparse.from_spmatrix(counts_sp)
-
+    
     rowsums = np.array(rowsums)
     rowsums = rowsums.flatten()
+    
+    colsums = np.array(colsums)
+    colsums = colsums.flatten()
+
+    sim_df = pd.DataFrame()
+    sim_df['row_sums'] = rowsums
+    sim_df['col_sums'] = colsums
+
+    '''
+    simulator = BaseSimulation(50, 50, max_dispersion_radius=50, max_dispersion_scale=50, joint_sums=sim_df)
+    counts = simulator.simulate_experiment()#rowsums)
+    coords = simulator.add_coords(simulator.bead_df)
+    '''
     simulator = BaseSimulation(50, 50, max_dispersion_radius=50, max_dispersion_scale=50)
     counts = simulator.simulate_experiment(rowsums)
     coords = simulator.add_coords(simulator.bead_df)
+    
     X_orig = coords[['x_coord','y_coord']].values
     true_dist = pairwise_distances(X_orig, metric='euclidean', n_jobs=-1)
     counts = counts.pivot(index='source_bead', columns='target_bead', values='bead_counts')
+    print(counts.shape)
     counts = counts.fillna(0.0)
-    counts[0] = 0
-    counts = counts.loc[:,sorted(counts.columns)]
+    #counts[0] = 0
+    counts = counts.reindex(index=coords.index, columns=coords.index, fill_value=0)
+    print(counts.shape)
+    #counts = counts.loc[:,sorted(counts.columns)]
+    
     rowsums = counts.sum(axis=1)
     colsums = counts.sum(axis=0)
     sums = rowsums+colsums
     counts = counts/sums
     counts = (counts + counts.T)/2
+
+    '''
+    counts = counts.reset_index()
+    print(counts.head())
+    counts_long = pd.melt(counts, id_vars=["index"])
+    counts_long.fillna(0.0, inplace=True)
+    counts_long = counts_long[counts_long["value"]!=0.0]
+    counts_long.iloc[:,0] = "bead_"+counts_long.iloc[:,0].astype(str)
+    counts_long.iloc[:,1] = "bead_"+counts_long.iloc[:,1].astype(str)
+    old_dir = dir.removesuffix("/figures/")
+    print(old_dir)
+    counts_long.to_csv(old_dir+"/sim.txt", sep="\t", header=False, index=False)
+
+
+    def submit_job(script_path):
+        # Submit the job and capture the job ID
+        submit_command = ['qsub', script_path]
+        result = subprocess.run(submit_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode != 0:
+            print(f"Error submitting job: {result.stderr}")
+            return None
+        # Extract job ID from the output
+        job_id = result.stdout.strip().split('.')[0]
+        return job_id
+        
+    def check_job_status(job_id):
+        # Check the job status
+        status_command = ['qstat', job_id]
+        result = subprocess.run(status_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        # If qstat returns a non-zero code, it means the job is no longer in the queue
+        return result.returncode == 0
+        
+    def wait_for_job_completion(job_id, check_interval=30):
+        while check_job_status(job_id):
+            print(f"Job {job_id} is still running. Checking again in {check_interval} seconds.")
+            time.sleep(check_interval)
+        print(f"Job {job_id} has completed.")
+        return None
+
+    qsub_path = "/net/gs/vol1/home/sanjayk/srivatsan/pipeline/sim_filter_edges.sh"
+
+    job_id = submit_job(qsub_path)
+    if job_id:
+        print(f"Submitted job with ID {job_id}. Waiting for completion.")
+        wait_for_job_completion(job_id)
+        print("Job completed. Proceeding with the rest of the script.")
+    else:
+        print("Failed to submit job. Exiting.")
+
+    
+    counts = create_sparse_matrix_from_file(
+        "/net/gs/vol1/home/sanjayk/srivatsan/pipeline/Asymmetric_filter_sim/simulation_filter/minpath_filtered_pairs_q0.2.txt")
+    counts = pd.DataFrame(counts.toarray())
+    '''
+    print(counts.shape, flush=True)
+    print(true_dist.shape, flush=True)
     
     dist_flatten = true_dist[np.triu_indices(true_dist.shape[0], k=1)]
     avg_x = counts.values[np.triu_indices(counts.shape[0], k=1)]
     avg_x = 101*avg_x/(100*avg_x+1)
+
+    indices = np.logical_not(np.logical_or(np.isnan(avg_x), np.isnan(dist_flatten)))
+    indices = np.array(indices)
+    print(len(avg_x),len(indices))
+    avg_x = avg_x[indices]
+    dist_flatten = dist_flatten[indices]
+    
     means = binned_statistic(avg_x, dist_flatten, 
                              statistic='mean', 
                              bins=100, 
@@ -139,11 +258,69 @@ def similarity_distance_mapping(dir, counts_sp):
     return counts_sp, gbr
 
 
-def cluster_beads(counts_sp, gbr):
+def cluster_beads(counts_sp, gbr, threshold=0.25):
     G = igraph.Graph.Weighted_Adjacency(counts_sp)
     bead_idx = np.array(list(range(counts_sp.shape[0])))
+    
+    #partition2 = la.find_partition(G, la.ModularityVertexPartition, weights="weight", max_comm_size=2500)
+    #clusters2 = partition2._membership
+
+    print("Number of beads: {}".format(counts_sp.shape[0]), flush=True)
+
+    print("Computing clustering...", flush=True)
+    time1 = timeit.default_timer()
+
+    '''
+    def cluster_leiden(graph):
+        partition_res = la.find_partition(graph, la.ModularityVertexPartition, weights="weight", max_comm_size=2500)
+        return partition_res._membership
+    results = Parallel(n_jobs=-1)(delayed(cluster_leiden)(G) for i in range(12))
+    results = list(results)
+
+    def consensus_clustering(cluster_runs, n_samples, max_cluster_size=2500):
+        cluster_runs = np.array(cluster_runs)
+        n_runs = cluster_runs.shape[0]
+        
+        co_association = np.zeros((n_samples, n_samples))
+        
+        for run in cluster_runs:
+            unique_labels = np.unique(run)
+            for label in unique_labels:
+                cluster_mask = (run == label)
+                co_association += np.outer(cluster_mask, cluster_mask)
+        
+        co_association /= n_runs
+        
+        # Convert to distance matrix
+        distance_matrix = 1 - co_association
+        
+        # Perform hierarchical clustering
+        linkage_matrix = linkage(distance_matrix, method='average')
+        
+        # Find optimal number of clusters
+        for t in np.arange(0.1, 1.0, 0.1):
+            labels = fcluster(linkage_matrix, t, criterion='distance')
+            cluster_sizes = np.bincount(labels)
+            if np.max(cluster_sizes) <= max_cluster_size:
+                break
+        return labels
+
+    clusters2 = consensus_clustering(results, counts_sp.shape[0], 2500)
+    '''
+
     partition2 = la.find_partition(G, la.ModularityVertexPartition, weights="weight", max_comm_size=2500)
     clusters2 = partition2._membership
+    
+    time2 = timeit.default_timer()
+    print("Time to compute clustering: {}\n".format(datetime.timedelta(seconds=int(time2-time1))), flush=True)
+    
+    
+    #n_cluster = int(counts_sp.shape[0]/2500)
+    #SC = SpectralClustering(n_clusters=n_cluster, affinity="precomputed")
+    #clusters2 = SC.fit_predict(counts_sp)
+
+    #####
+    
     counter = dict(Counter(clusters2))
 
     # loop
@@ -156,7 +333,7 @@ def cluster_beads(counts_sp, gbr):
         counter = dict(Counter(clusters2))
         counter = pd.Series(counter)
         counter.sort_values(inplace=True)
-        print(count)
+        print(count, flush=True)
         ################
         from collections import defaultdict
     
@@ -164,7 +341,7 @@ def cluster_beads(counts_sp, gbr):
         boundary_nodes = defaultdict(list)
         
         # Threshold for the ratio of edges connecting to nodes in different clusters
-        threshold = 0.3
+        #threshold = 0.3
         
         # Iterate through each node in the graph
         for node_index, node_partition in enumerate(clusters2):
@@ -236,9 +413,9 @@ def cluster_beads(counts_sp, gbr):
         max_overlap = overlap_sizes.apply(np.max)
         empty_clusters = max_overlap[max_overlap < overlap_thresh].index
         empty_clusters = np.array(empty_clusters)
-        print(empty_clusters)
+        print(empty_clusters, flush=True)
         for i in boundary_nodes.keys():
-            print(i,len(boundary_nodes[i]))
+            print(i,len(boundary_nodes[i]), flush=True)
         ###############
         clusters2 = np.array(clusters2)
         mask = ~np.isin(clusters2, empty_clusters)
@@ -347,7 +524,7 @@ def cluster_beads(counts_sp, gbr):
         boundary_nodes = defaultdict(list)
         
         # Threshold for the ratio of edges connecting to nodes in different clusters
-        threshold = 0.3
+        #threshold = 0.3
         
         # Iterate through each node in the graph
         for node_index, node_partition in enumerate(clusters2):
@@ -440,18 +617,21 @@ def cluster_beads(counts_sp, gbr):
         ##################
         count += 1
 
+    print("Number of clusters: {}".format(len(np.unique(clusters2))))
+
     # end loop
     return counts_sp, clusters2, bead_idx, cluster_dict, total_dict, overlapping, boundary_nodes, sparse_df
 
 
-def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, overlapping, boundary_nodes, sparse_df, dir):
+def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, overlapping, boundary_nodes, sparse_df, dir, unique):
     tsne_dict = {}
     N = len(np.unique(clusters2))
     cmap = mpl.colors.ListedColormap(plt.get_cmap("gist_ncar")(np.linspace(0,1,N)))
     color_dict = pd.Series(dict(zip(range(len(clusters2)),clusters2)))
 
     overlap_thresh = 30
-    
+
+    '''
     def subset_has_boundary_neighbors_spiky_alpha(points, r, boundary_points_indices, proportion_threshold, alpha=1.0):
         """
         Check if a specified proportion of the points in each subset have neighbors on the boundary of the alpha shape.
@@ -467,12 +647,12 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
         - has_boundary_neighbors: A list of boolean values indicating whether the proportion of points with boundary 
         neighbors in each subset meets the threshold.
         """
-        noise = 1e-8 * np.random.rand(*points.shape)
+        noise = 1e-5 * np.random.rand(*points.shape)
         points += noise
     
         def median_dist(mat):
             #mat = np.multiply(mat.values, vars)
-            noise = 1e-8 * np.random.rand(*mat.shape)
+            noise = 1e-5 * np.random.rand(*mat.shape)
             mat += noise
             tri = Delaunay(mat, qhull_options="Qbb Qc Qz Q12")
             triangles = mat[tri.simplices]
@@ -537,10 +717,353 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
                     has_boundary_neighbors.append(False)
     
         return has_boundary_neighbors, prop
+    '''
 
+    '''
+    def subset_has_boundary_neighbors_spiky_alpha(points, boundary_points_indices, proportion_threshold, alpha=1.0):
+        """
+        Check which boundary points lie in the difference of alpha shapes for multiple sets.
+        
+        :param points: (N,2) shape ndarray of all points
+        :param boundary_points_indices: list of lists, each containing indices of boundary points
+        :param alpha: alpha value for the alpha shape
+        :return: list of proportions of boundary points in the difference for each set
+        """
+        # Create the alpha shape of all points
+        noise = 1e-5 * np.random.rand(*points.shape)
+        points += noise
+        
+        all_shape = alphashape(points, alpha)
+        
+        # Create a set of all boundary indices
+        all_boundary_indices = set()
+        for indices in boundary_points_indices:
+            all_boundary_indices.update(indices)
+        
+        # Create the alpha shape of non-boundary points
+        non_boundary_points = points[~np.isin(np.arange(len(points)), list(all_boundary_indices))]
+        non_boundary_shape = alphashape(non_boundary_points, alpha)
+        
+        # Compute the difference
+        difference = all_shape.difference(non_boundary_shape)
+        
+        # Check which boundary points are in the difference for each set
+        proportions = []
+        has_boundary_neighbors = []
+        for boundary_set in boundary_points_indices:
+            boundary_in_difference = 0
+            for idx in boundary_set:
+                if difference.contains(Point(points[idx])):
+                    boundary_in_difference += 1
+            proportion = boundary_in_difference / len(boundary_set) if len(boundary_set) > 0 else 0
+            print(proportion, len(boundary_set))
+            proportions.append(proportion)
+            if proportion >= proportion_threshold:
+                has_boundary_neighbors.append(True)
+            else:
+                has_boundary_neighbors.append(False)
+        
+        return has_boundary_neighbors, proportions
+    '''
+    
+
+    def get_polygon_from_triangles(points, triangles):
+        """
+        Create a polygon from a set of triangles by identifying boundary edges.
+        """
+        if len(triangles) == 0:
+            return None, []  # Return None if there are no triangles
+    
+        edge_count = {}
+        for triangle in triangles:
+            for i in range(3):
+                edge = tuple(sorted([triangle[i], triangle[(i + 1) % 3]]))
+                edge_count[edge] = edge_count.get(edge, 0) + 1
+    
+        # Boundary edges are those which are counted only once
+        boundary_edges = [edge for edge, count in edge_count.items() if count == 1]
+    
+        if len(boundary_edges) == 0:
+            return None, []  # Return None if there are no boundary edges
+    
+        # Sort boundary edges to form a continuous path
+        sorted_edges = [boundary_edges[0]]
+        used_edges = set([boundary_edges[0]])
+        while len(sorted_edges) < len(boundary_edges):
+            last_edge = sorted_edges[-1]
+            next_edge = next((edge for edge in boundary_edges
+                              if edge not in used_edges and (edge[0] in last_edge or edge[1] in last_edge)), None)
+            if next_edge is None:
+                break
+            sorted_edges.append(next_edge)
+            used_edges.add(next_edge)
+    
+        # Create the polygon
+        boundary_points = [points[sorted_edges[0][0]]]
+        for edge in sorted_edges:
+            next_point = points[edge[1]] if np.allclose(points[edge[0]], boundary_points[-1]) else points[edge[0]]
+            boundary_points.append(next_point)
+    
+        polygon = Polygon(boundary_points)
+    
+        # Check which points are inside or on the boundary of the polygon
+        points_outside = []
+        for i, point in enumerate(points):
+            point_obj = Point(point)
+            if not (polygon.contains(point_obj) or polygon.touches(point_obj)):
+                points_outside.append(i)
+    
+        return polygon, points_outside
+    
+    def clean_polygon(polygon, buffer_distance=1e-6):
+        """
+        Clean a polygon by applying a small buffer operation.
+        This can help resolve minor self-intersections and invalid geometries.
+        """
+        return polygon.buffer(buffer_distance).buffer(-buffer_distance)
+    
+    def remove_triangle_layers(points, triangles, layers=1):
+        """
+        Remove specified number of triangle layers from the edge of the shape.
+        """
+        edge_count = {}
+        edge_to_triangle = {}
+        for i, triangle in enumerate(triangles):
+            for j in range(3):
+                edge = tuple(sorted([triangle[j], triangle[(j+1)%3]]))
+                edge_count[edge] = edge_count.get(edge, 0) + 1
+                if edge not in edge_to_triangle:
+                    edge_to_triangle[edge] = []
+                edge_to_triangle[edge].append(i)
+    
+        boundary_edges = set(edge for edge, count in edge_count.items() if count == 1)
+    
+        removed_triangles = set()
+        for _ in range(layers):
+            new_removed = set()
+            for edge in boundary_edges:
+                new_removed.update(edge_to_triangle[edge])
+            removed_triangles.update(new_removed)
+    
+            # Update boundary edges
+            boundary_edges = set()
+            for triangle_idx in new_removed:
+                for j in range(3):
+                    edge = tuple(sorted([triangles[triangle_idx][j], triangles[triangle_idx][(j+1)%3]]))
+                    if edge_count[edge] == 2 and len(set(edge_to_triangle[edge]) - removed_triangles) == 1:
+                        boundary_edges.add(edge)
+    
+        remaining_triangles = [tri for i, tri in enumerate(triangles) if i not in removed_triangles]
+        return remaining_triangles
+    
+    def border_detection(points, boundary_points_indices, proportion_threshold, inner_layers=5):
+        noise = 1e-5 * np.random.rand(*points.shape)
+        points += noise
+    
+        tri_all = Delaunay(points)
+        polygon_all, points_outside_all = get_polygon_from_triangles(points, tri_all.simplices)
+        if polygon_all is None:
+            return [False] * len(boundary_points_indices), [0] * len(boundary_points_indices), None, None
+        polygon_all = clean_polygon(polygon_all)
+    
+        points_outside_cleaned = []
+        for i, point in enumerate(points):
+            point_obj = Point(point)
+            if not (polygon_all.contains(point_obj) or polygon_all.touches(point_obj)):
+                points_outside_cleaned.append(i)
+    
+        all_boundary_indices = set()
+        for indices in boundary_points_indices:
+            all_boundary_indices.update(indices)
+    
+        non_boundary_indices = ~np.isin(np.arange(len(points)), list(all_boundary_indices))
+        non_boundary_points = points[non_boundary_indices]
+    
+        if len(non_boundary_points) < 4:
+            return [True] * len(boundary_points_indices), [1] * len(boundary_points_indices), None, None
+    
+        tri_non_boundary = Delaunay(non_boundary_points)
+        inner_triangles = remove_triangle_layers(non_boundary_points, tri_non_boundary.simplices, layers=inner_layers)
+        polygon_non_boundary, points_outside_non = get_polygon_from_triangles(non_boundary_points, inner_triangles)
+    
+        if polygon_non_boundary is None:
+            return [True] * len(boundary_points_indices), [1] * len(boundary_points_indices), None, None
+    
+        polygon_non_boundary = clean_polygon(polygon_non_boundary)
+    
+        try:
+            difference = polygon_all.difference(polygon_non_boundary)
+        except shapely.errors.GEOSException:
+            polygon_all = clean_polygon(polygon_all, buffer_distance=1e-5)
+            polygon_non_boundary = clean_polygon(polygon_non_boundary, buffer_distance=1e-5)
+            difference = polygon_all.difference(polygon_non_boundary)
+    
+        if not difference.is_valid:
+            difference = clean_polygon(difference)
+    
+        if isinstance(difference, MultiPolygon):
+            difference = unary_union(difference)
+    
+        has_boundary_neighbors = []
+        proportions = []
+        for boundary_set in boundary_points_indices:
+            boundary_in_difference = 0
+            for idx in boundary_set:
+                point = Point(points[idx])
+                if difference.contains(point) or difference.intersects(point):
+                    boundary_in_difference += 1
+            proportion = boundary_in_difference / len(boundary_set) if len(boundary_set) > 0 else 0
+            proportions.append(proportion)
+            has_boundary_neighbors.append(proportion >= proportion_threshold)
+    
+        return has_boundary_neighbors, proportions, polygon_all, polygon_non_boundary
+
+    def prune_inner_shape(points, percentage=0.9):
+        """
+        Prune the inner shape by keeping only a percentage of points closest to the center.
+        """
+        center = np.mean(points, axis=0)
+        distances = np.linalg.norm(points - center, axis=1)
+        threshold = np.percentile(distances, percentage * 100)
+        inner_points = points[distances <= threshold]
+        return alphashape(inner_points, alpha=1.0)
+
+    def median_cluster(mat):
+        #mat = mat.values#np.multiply(mat.values, vars)
+        noise = 1e-5 * np.random.rand(*mat.shape)
+        mat += noise
+        tri = Delaunay(mat, qhull_options="Qbb Qc Qz Q12")
+        triangles = mat[tri.simplices]
+    
+        edge_lengths = []
+        for simplex in tri.simplices:
+            # Get the vertices of the triangle
+            v0, v1, v2 = mat[simplex]
+            
+            # Calculate the lengths of the edges
+            length = np.array([
+                euclidean(v0, v1),
+                euclidean(v1, v2),
+                euclidean(v2, v0)])
+            edge_lengths.append(length)
+            
+        edge_lengths = np.array(edge_lengths).flatten()
+    
+        # Reshape edge_lengths to match triangles
+        #edge_lengths = edge_lengths.reshape(-1, 3)
+        median = np.median(edge_lengths)
+        return median
+    
+    def prune_KDE(points, proportion=0.99):
+        bw = 4*median_cluster(points)
+        kde = KernelDensity(kernel='gaussian', bandwidth=bw).fit(points)
+        x = points[:, 0]
+        y = points[:, 1]
+        xi = np.linspace(x.min() - 1, x.max() + 1, 100)
+        yi = np.linspace(y.min() - 1, y.max() + 1, 100)
+        xi, yi = np.meshgrid(xi, yi)
+        grid_points = np.vstack([xi.ravel(), yi.ravel()]).T
+        log_density = kde.score_samples(grid_points)
+        zi = np.exp(log_density).reshape(xi.shape)
+        total_points = len(x)
+        threshold = proportion * total_points
+        
+        sorted_density = np.sort(zi.ravel())
+        contour_level = sorted_density[-int(threshold)]
+        contour_lines = plt.contour(xi, yi, zi, levels=[contour_level], colors='red')
+        
+        contour_polygon = None
+
+        for collection in contour_lines.collections:
+            for path in collection.get_paths():
+                # Get the vertices of the contour line
+                vertices = path.vertices
+                # Create a Shapely Polygon
+                poly = Polygon(vertices)
+                if contour_polygon is None:
+                    contour_polygon = poly
+                else:
+                    contour_polygon = contour_polygon.union(poly)
+        return contour_polygon
+    
+
+    def alpha_shape_border_detection(points, boundary_points_indices, proportion_threshold, inner_layers=10, alpha=1.0):
+        """
+        Detect borders using alpha shapes for the outer polygon and Delaunay triangulation for the inner polygon.
+        """
+        # Add small noise to prevent colinear points
+        noise = 1e-5 * np.random.rand(*points.shape)
+        points += noise
+    
+        # Create alpha shape for all points (outer polygon)
+        alpha_shape = alphashape(points, alpha)
+        if isinstance(alpha_shape, MultiPolygon):
+            polygon_all = unary_union(alpha_shape)
+        else:
+            polygon_all = alpha_shape
+    
+        # Create a set of all boundary indices
+        all_boundary_indices = set()
+        for indices in boundary_points_indices:
+            all_boundary_indices.update(indices)
+    
+        # Compute Delaunay triangulation for non-boundary points
+        non_boundary_indices = ~np.isin(np.arange(len(points)), list(all_boundary_indices))
+        non_boundary_points = points[non_boundary_indices]
+    
+        if len(non_boundary_points) < 4:  # Not enough points for triangulation
+            return [True] * len(boundary_points_indices), [1] * len(boundary_points_indices), polygon_all, None
+    
+        
+        tri_non_boundary = Delaunay(non_boundary_points)
+    
+        # Remove layers from the inner shape
+        inner_triangles = remove_triangle_layers(non_boundary_points, tri_non_boundary.simplices, layers=inner_layers)
+        polygon_non_boundary, points_outside = get_polygon_from_triangles(non_boundary_points, inner_triangles)
+        #polygon_non_boundary = prune_KDE(non_boundary_points)
+        
+        if polygon_non_boundary is None:
+            return [True] * len(boundary_points_indices), [1] * len(boundary_points_indices), polygon_all, None
+    
+        # Compute the difference
+        try:
+            difference = polygon_all.difference(polygon_non_boundary)
+        except:
+            # If difference fails, try with further cleaned polygons
+            polygon_all = clean_polygon(polygon_all, buffer_distance=1e-5)
+            polygon_non_boundary = clean_polygon(polygon_non_boundary, buffer_distance=1e-5)
+            difference = polygon_all.difference(polygon_non_boundary)
+    
+        # Ensure the difference is a valid geometry
+        if not difference.is_valid:
+            difference = clean_polygon(difference)
+    
+        # Handle potential MultiPolygon result
+        if isinstance(difference, MultiPolygon):
+            difference = unary_union(difference)
+    
+        # Check which boundary points are in the difference for each set
+        has_boundary_neighbors = []
+        proportions = []
+        for boundary_set in boundary_points_indices:
+            boundary_in_difference = 0
+            for idx in boundary_set:
+                point = Point(points[idx])
+                if difference.contains(point) or difference.intersects(point):
+                    boundary_in_difference += 1
+            proportion = boundary_in_difference / len(boundary_set) if len(boundary_set) > 0 else 0
+            proportions.append(proportion)
+            print(proportion, len(boundary_set))
+            has_boundary_neighbors.append(proportion >= proportion_threshold)
+    
+        return has_boundary_neighbors, proportions, polygon_all, polygon_non_boundary
+
+# The remove_triangle_layers and get_polygon_from_triangles functions remain the same
+    
+    
     def stdev_cluster(mat):
         #mat = mat.values#np.multiply(mat.values, vars)
-        noise = 1e-8 * np.random.rand(*mat.shape)
+        noise = 1e-5 * np.random.rand(*mat.shape)
         mat += noise
         tri = Delaunay(mat, qhull_options="Qbb Qc Qz Q12")
         triangles = mat[tri.simplices]
@@ -570,7 +1093,7 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
     
         def median_dist(mat):
             #mat = np.multiply(mat.values, vars)
-            noise = 1e-8 * np.random.rand(*mat.shape)
+            noise = 1e-5 * np.random.rand(*mat.shape)
             mat += noise
             tri = Delaunay(mat, qhull_options="Qbb Qc Qz Q12")
             triangles = mat[tri.simplices]
@@ -637,8 +1160,9 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
         labeled_image, num_objects = label(segmented_image, connectivity=1, return_num=True)
         object_sizes = [np.sum(labeled_image == label) for label in range(1, num_objects + 1)]
     
-        return num_objects, object_sizes
-    
+        return num_objects, object_sizes, eroded_image
+
+    '''
     def assess_even_spacing_histogram(points, num_bins=10):
         """
         Assess whether a set of points are evenly spaced by checking the uniformity of a 2D histogram.
@@ -661,6 +1185,53 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
         chi_square = np.sum((H - expected_count) ** 2 / expected_count)
 
         return chi_square, H
+    '''
+    
+    def square_tiled_alpha_shape_2d_histogram(points, n_bins_total=1000, alpha=1.0):
+        """
+        Compute a 2D histogram on a point cloud using alpha shapes,
+        tiling the shape with a specified number of square bins.
+        Also computes a chi-square test statistic comparing the distribution
+        to a uniform distribution.
+        
+        Args:
+        points (np.array): Nx2 array of point coordinates
+        n_bins_total (int): Approximate total number of square bins to cover the alpha shape
+        alpha (float): Alpha value for the alpha shape (lower for tighter fit)
+        
+        Returns:
+        tuple: (histogram, bin_size, x_min, y_min, alpha_shape, chi_square_statistic, p_value)
+        """
+        # Compute alpha shape
+        alpha_shape = alphashape(points, alpha)
+        
+        # Calculate bin size
+        alpha_shape_area = alpha_shape.area
+        bin_size = np.sqrt(alpha_shape_area / n_bins_total)
+        
+        # Find the minimum x and y coordinates of points within the alpha shape
+        points_in_shape = [p for p in points if alpha_shape.contains(Point(p))]
+        x_min, y_min = np.min(points_in_shape, axis=0)
+        
+        # Initialize histogram
+        hist = defaultdict(int)
+        
+        # Bin points
+        for point in points_in_shape:
+            x_idx = int((point[0] - x_min) / bin_size)
+            y_idx = int((point[1] - y_min) / bin_size)
+            hist[(x_idx, y_idx)] += 1
+        
+        # Prepare data for chi-square test
+        observed_frequencies = list(hist.values())
+        n_bins = len(observed_frequencies)
+        expected_frequency = len(points_in_shape) / n_bins
+        expected_frequencies = [expected_frequency] * n_bins
+        
+        # Perform chi-square test
+        chi_square_statistic, p_value = chisquare(observed_frequencies, f_exp=expected_frequencies)
+        
+        return hist, bin_size, x_min, y_min, alpha_shape, chi_square_statistic, p_value
 
     ######################################################
     
@@ -682,6 +1253,7 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
         dist_mat[inds] = dist_pred
         dist_mat[(inds[1], inds[0])] = dist_pred
         np.fill_diagonal(dist_mat, 0)
+
         
         print("Computing spectral embedding initialization...")
         time1 = timeit.default_timer()
@@ -689,13 +1261,13 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
         se1 = se.fit_transform(subset)
         time2 = timeit.default_timer()
         print("Time to compute spectral embedding: {}\n".format(datetime.timedelta(seconds=int(time2-time1))))
-    
+        
         print("Computing TSNE...")
         time1 = timeit.default_timer()
     
         ###############
         def run_tsne(perp):
-            tsne = TSNE(metric='precomputed', init=se1,#init="random", 
+            tsne = TSNE(metric='precomputed', init="random", #se1
                         perplexity=perp, learning_rate="auto", early_exaggeration=12.0,
                        angle=1.0, method="barnes_hut", 
                         n_iter=500, n_iter_without_progress=50, min_grad_norm=1e-7)
@@ -705,12 +1277,12 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
         perp_range = [k for k in perp_range if k<len(total_dict[i])]
         results = Parallel(n_jobs=-1)(delayed(run_tsne)(i) for i in perp_range)
         results = np.array(list(results))
-    
+        
         fig, axs = plt.subplots(3, 4, figsize=(12, 9))
         axs = axs.flatten()
         for k in range(len(results)):
             ax = axs[k]
-            ax.scatter(results[k][:,0], results[k][:,1], s=2, 
+            ax.scatter(results[k][:,0], results[k][:,1], s=3, 
                 c=color_dict[total_dict[i]], cmap=cmap, edgecolors='black', linewidth=0.1, label="TSNE")
             #plt.scatter(results[k][green_intersect,0], results[k][green_intersect,1], s=10, color="red", marker="+", linewidths=0.5)
             #ax.legend(bbox_to_anchor=(1.05, 1.0), loc='upper left')
@@ -721,15 +1293,23 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
             #plt.savefig(dir+"/initial_tsne.png", dpi=300)
             #plt.show(
             #plt.subplot(1,9,k+1)
+            ax.set_aspect('equal')
         plt.tight_layout()
-        plt.savefig(dir+"tsne_grid_{}.svg".format(i), dpi=500)
+        plt.savefig(dir+"tsne_grid_{}.png".format(i), dpi=500)
         plt.show()
+        plt.gcf()
+        plt.clf()
         
         bool_array = []
         prop_array = []
         obj_bool = []
         
         print("*****")
+        fig2, axs2 = plt.subplots(3, 4, figsize=(12, 9))
+        axs2 = axs2.flatten()
+        polygons_all = []
+        polygons_inner = []
+        
         for j in range(len(results)):
             print("Cluster: {}, Perp={}".format(i,perp_range[j]))
             '''
@@ -751,11 +1331,15 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
                 indices = np.nonzero(mask)[0]
                 if len(indices) >= overlap_thresh:
                     index_dict[m] = indices
-        
+            
             points = results[j]#tsne_dict[j].values
             subsets = list(index_dict.values())
             
-            is_on_boundary, prop = subset_has_boundary_neighbors_spiky_alpha(points, 5, subsets, 0.8)
+            #is_on_boundary, prop = subset_has_boundary_neighbors_spiky_alpha(points, 5, subsets, 0.8)
+            is_on_boundary, prop, polygon_all, polygon_non_boundary = alpha_shape_border_detection(points, subsets, 0.8)
+            polygons_all.append(polygon_all)
+            polygons_inner.append(polygon_non_boundary)
+            
             print(is_on_boundary)
             bool_array.append(all(is_on_boundary))
             print(bool_array)
@@ -767,7 +1351,13 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
                 
             print("Detecting number of objects...")
             binary_img = point_cloud_to_binary_image(points)
-            num_objects, object_sizes = analyze_binary_image(binary_img)
+            
+            num_objects, object_sizes, binary_img = analyze_binary_image(binary_img)
+
+            ax2 = axs2[j]
+            ax2.imshow(binary_img[::-1,:].copy(), cmap="Greys")
+            ax2.set_title("Perplexity = {}".format(perp_range[j]))
+            
             object_sizes = np.array(object_sizes)
             object_sizes = object_sizes[object_sizes>20]
             print(len(object_sizes))
@@ -775,8 +1365,51 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
                 obj_bool.append(True)
             else:
                 obj_bool.append(False)
-            
+            ax2.set_aspect('equal')
             print("---------------------------------")
+        plt.tight_layout()
+        plt.savefig(dir+"/binary_img_{}.png".format(i), dpi=500)
+        #plt.show()
+        plt.gcf()
+        plt.clf()
+
+        # plot boundary result
+        fig1, axs1 = plt.subplots(3, 4, figsize=(12, 9))
+        axs1 = axs1.flatten()
+        for k in range(len(results)):
+            ax1 = axs1[k]
+            points = results[k]
+            ax1.scatter(points[:,0], points[:,1], s=3, 
+                c=color_dict[total_dict[i]], cmap=cmap, edgecolors='black', linewidth=0.1, label="TSNE")
+            ax1.set_title("Cluster {}, Perp={}".format(i,perp_range[k]))
+
+            polygon_all = polygons_all[k]
+            polygon_non_boundary = polygons_inner[k]
+
+            if isinstance(polygon_all, Polygon):
+                x, y = polygon_all.exterior.xy
+                ax1.plot(x, y, c='red', linewidth=2, label='Outer Polygon')
+            elif isinstance(polygon_all, MultiPolygon):
+                for geom in polygon_all.geoms:
+                    x, y = geom.exterior.xy
+                    ax1.plot(x, y, c='red', linewidth=2)
+
+            if isinstance(polygon_non_boundary, Polygon):
+                x, y = polygon_non_boundary.exterior.xy
+                ax1.plot(x, y, c='green', linewidth=2, label='Inner Polygon')
+            elif isinstance(polygon_non_boundary, MultiPolygon):
+                for geom in polygon_non_boundary.geoms:
+                    x, y = geom.exterior.xy
+                    ax1.plot(x, y, c='green', linewidth=2)
+            ax1.set_aspect('equal')
+        plt.tight_layout()
+        plt.savefig(dir+"/border_grid_{}.png".format(i), dpi=500)
+        #plt.show()
+        plt.gcf()
+        plt.clf()
+        
+        
+        
         bool_array = np.array(bool_array)
         print("border bool: {}".format(bool_array))
         print("segmented bool: {}".format(obj_bool))
@@ -793,37 +1426,68 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
         #    new_results = np.array(results[np.argmax(prop_array)])
         #    new_params = np.array(perp_range[np.argmax(prop_array)])
         if not any(bool_array):
-            bool_array = obj_bool.copy()
-            new_results = results[bool_array]
-            new_params = np.array(perp_range)[bool_array]
-            prop_array = np.array(prop_array)[bool_array]
-            new_results = np.array([results[np.argmax(prop_array)]])
-            new_params = np.array([perp_range[np.argmax(prop_array)]])
+            if any(obj_bool):
+                bool_array = obj_bool.copy()
+                new_results = results[bool_array]
+                new_params = np.array(perp_range)[bool_array]
+                prop_array = np.array(prop_array)[bool_array]
+                new_results = np.array([new_results[np.argmax(prop_array)]])
+                new_params = np.array([new_params[np.argmax(prop_array)]])
+            else:
+                print("This cluster is in multiple pieces.")
+                new_results = results.copy()
+                new_params = np.array(perp_range)
+                prop_array = np.array(prop_array)
+                new_results = np.array([new_results[np.argmax(prop_array)]])
+                new_params = np.array([new_params[np.argmax(prop_array)]])
+                
     
         print(new_params)
         print(new_results.shape)
         print(new_results[0].shape)
         #stdevs = [stdev_cluster(mat) for mat in new_results]
         stdevs = []
-    
+
+
         n = len(new_results)  # Number of subplots
         cols = math.ceil(math.sqrt(n))  # Calculate number of columns
         rows = math.ceil(n / cols)
-        fig, axs = plt.subplots(rows, cols, figsize=(10, 8))
+        fig3, axs3 = plt.subplots(rows, cols, figsize=(10, 8))
         try:
-            axs = axs.flatten()
+            axs3 = axs3.flatten()
         except:
-            axs = [axs]
-        
+            axs3 = [axs3]
+            
+        #hist_list = []
         for k in range(len(new_results)):
             mat = new_results[k]
-            bins = int(mat.shape[0]/40)
-            chi_square, H = assess_even_spacing_histogram(mat, bins)
+            bins = int(mat.shape[0]/5)
+            hist, bin_size, x_min, y_min, alpha_shape, chi_square, p_value = square_tiled_alpha_shape_2d_histogram(mat, bins)
+            #hist_list.append(hist)
             stdevs.append(chi_square)
-            ax = axs[k]
-            ax.imshow(H, origin='lower', cmap='viridis')
-            ax.set_title("Perp={}".format(new_params[k]))
-        plt.show()
+            #ax = axs[k]
+            #ax.imshow(H, origin='lower', cmap='viridis')
+            #ax.set_title("Perp={}".format(new_params[k]))
+
+            ax3 = axs3[k]
+            for (x_idx, y_idx), count in hist.items():
+                rect = plt.Rectangle((x_min + x_idx * bin_size, y_min + y_idx * bin_size), 
+                                     bin_size, bin_size, 
+                                     facecolor='blue', alpha=count / max(hist.values()))
+                ax3.add_patch(rect)
+            
+            ax3.set_xlim(x_min, x_min + (max(x_idx for x_idx, _ in hist.keys()) + 1) * bin_size)
+            ax3.set_ylim(y_min, y_min + (max(y_idx for _, y_idx in hist.keys()) + 1) * bin_size)
+            ax3.set_title("Perp={}".format(new_params[k]))
+            ax3.set_aspect('equal')
+            
+        plt.tight_layout()
+        plt.savefig(dir+"/hist2d_{}.png".format(i), dpi=500)
+        #plt.show()
+        plt.gcf()
+        plt.clf()
+
+        
     
         print(stdevs)
         
@@ -831,6 +1495,8 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
         
         ###############
         
+        plt.gcf()
+        plt.clf()
         
         time2 = timeit.default_timer()
         print("Time to compute TSNE: {}\n".format(datetime.timedelta(seconds=int(time2-time1))))
@@ -841,16 +1507,23 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
         #plt.scatter(X_orig[total_dict[i],0], X_orig[total_dict[i],1], s=5, color="lightblue", 
         #            marker="x", linewidths=0.5, label="Original")
         #plt.scatter(X_orig[green_intersect,0], X_orig[green_intersect,1], s=8, color="green", marker="x", linewidths=0.5)
-        plt.scatter(tsne_df.loc[:,0], tsne_df.loc[:,1], s=2, 
+        plt.scatter(tsne_df.loc[:,0], tsne_df.loc[:,1], s=5, 
                 c=color_dict[tsne_df.index], cmap=cmap, edgecolors='black', linewidth=0.1, label="TSNE")
         #plt.scatter(tsne_df.loc[green_intersect,0], tsne_df.loc[green_intersect,1], s=10, color="red", marker="+", linewidths=0.5)
         #plt.legend(bbox_to_anchor=(1.05, 1.0), loc='upper left')
         plt.title("Cluster {}".format(i))
         plt.tight_layout()
+        plt.gca().set_aspect('equal')
         plt.savefig(dir+"/tsne_{}.png".format(i), dpi=500)
         plt.show()
     
         tsne_df = pd.DataFrame(index=total_dict[i], data=tsne1)
+        
+        #partial_df = tsne_df.copy()
+        mapping_rev = dict(zip(list(range(len(unique))), unique))
+        #partial_df.index = partial_df.index.map(mapping_rev)
+        #partial_df.to_csv("{}/tsne_{}.csv".format(dir,i))
+        
         tsne_dict[i] = tsne_df
         print("----------------------------")
     mpl.rcParams['font.size'] = 12
@@ -859,7 +1532,7 @@ def cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, 
 
     def median_cluster(mat):
         #mat = mat.values#np.multiply(mat.values, vars)
-        noise = 1e-8 * np.random.rand(*mat.shape)
+        noise = 1e-5 * np.random.rand(*mat.shape)
         mat += noise
         tri = Delaunay(mat, qhull_options="Qbb Qc Qz Q12")
         triangles = mat[tri.simplices]
@@ -998,7 +1671,7 @@ def stitch_clusters(overlapping, tsne_scaled, tsne_scaled_orig, clusters2, bead_
     ax.set_title("Puzzle Solution")
     fig.canvas.draw()
     figs.append(fig)
-    plt.savefig(dir+"/puzzle_stitch_{}.svg".format(len(list_added)), dpi=500)
+    plt.savefig(dir+"/puzzle_stitch_{}.png".format(len(list_added)), dpi=500)
     plt.pause(2)
     ax.clear()
     
@@ -1122,7 +1795,7 @@ def stitch_clusters(overlapping, tsne_scaled, tsne_scaled_orig, clusters2, bead_
         ax.set_title("Puzzle Solution")
         fig.canvas.draw()
         figs.append(fig)
-        plt.savefig(dir+"/puzzle_stitch_{}.svg".format(len(list_added)), dpi=500)
+        plt.savefig(dir+"/puzzle_stitch_{}.png".format(len(list_added)), dpi=500)
         plt.pause(2)
         
         if len(list_added) < len(tsne_scaled):
@@ -1147,15 +1820,38 @@ def stitch_clusters(overlapping, tsne_scaled, tsne_scaled_orig, clusters2, bead_
     tsne_stitch['X1'] = tsne_stitch[1].copy()
     del tsne_stitch[1]
 
+    min_x = min(tsne_stitch['X0'])
+    max_x = max(tsne_stitch['X0'])
+    range_x = max_x-min_x
+    min_x = min_x-0.1*range_x
+    max_x = max_x+0.1*range_x
+    range_x = max_x-min_x
+    min_y = min(tsne_stitch['X1'])
+    max_y = max(tsne_stitch['X1'])
+    range_y = max_y-min_y
+    min_y = min_y-0.1*range_y
+    max_y = max_y+0.1*range_y
+    range_y = max_y-min_y
+    centroid = np.mean(tsne_stitch[['X0','X1']].values, axis=0)
+    if range_x>range_y:
+        min_y = centroid[1]-0.5*range_x
+        max_y = centroid[1]+0.5*range_x
+    else:
+        min_x = centroid[0]-0.5*range_y
+        max_x = centroid[0]+0.5*range_y
+    
+    
+    plt.gcf()
+    plt.clf()
     cmap = mpl.colors.ListedColormap(plt.get_cmap("gist_ncar")(np.linspace(0,1,N)))
     plt.scatter(tsne_stitch.loc[:,'X0'], tsne_stitch.loc[:,'X1'], s=2, cmap=cmap, edgecolors='black', linewidth=0.1, c=clusters2)#c=clusters2
     plt.colorbar()
-    #plt.xlim(-100, 150)
-    #plt.ylim(-60, 210)
+    plt.xlim(min_x, max_x)
+    plt.ylim(min_y, max_y)
     plt.xlabel("Dimension 1")
     plt.ylabel("Dimension 2")
     plt.title("Initial Puzzle Solution ")
-    plt.savefig(dir+"/puzzle_solution_initial.svg", dpi=500)
+    plt.savefig(dir+"/puzzle_solution_initial.png", dpi=500)
     plt.show()
 
 
@@ -1171,7 +1867,7 @@ def stitch_clusters(overlapping, tsne_scaled, tsne_scaled_orig, clusters2, bead_
     return dir, sample_dir, new_dict, overlapping, tsne_scaled_orig, tsne_scaled, bead_idx, N, unique, tsne_stitch
     
 
-def refine_solution(dir, sample_dir, new_dict, overlapping, tsne_scaled_orig, tsne_scaled, bead_idx, N, unique, tsne_stitch):
+def refine_solution(dir, sample_dir, new_dict, overlapping, tsne_scaled_orig, tsne_scaled, bead_idx, N, unique, tsne_stitch, clusters2):
     def matrix_error(vars1, vars2, mat1, mat2, indices):#, error_bool=False):
         rotation_angle, translation_x, translation_y = vars1
         mat1 = mat1.loc[indices,:].values
@@ -1287,17 +1983,37 @@ def refine_solution(dir, sample_dir, new_dict, overlapping, tsne_scaled_orig, ts
     tsne_total['X1'] = tsne_total[1].copy()
     del tsne_total[1]
 
+    min_x = min(tsne_total['X0'])
+    max_x = max(tsne_total['X0'])
+    range_x = max_x-min_x
+    min_x = min_x-0.1*range_x
+    max_x = max_x+0.1*range_x
+    range_x = max_x-min_x
+    min_y = min(tsne_total['X1'])
+    max_y = max(tsne_total['X1'])
+    range_y = max_y-min_y
+    min_y = min_y-0.1*range_y
+    max_y = max_y+0.1*range_y
+    range_y = max_y-min_y
+    centroid = np.mean(tsne_total[['X0','X1']].values, axis=0)
+    if range_x>range_y:
+        min_y = centroid[1]-0.5*range_x
+        max_y = centroid[1]+0.5*range_x
+    else:
+        min_x = centroid[0]-0.5*range_y
+        max_x = centroid[0]+0.5*range_y
+    
     plt.gcf()
     plt.clf()
     cmap = mpl.colors.ListedColormap(plt.get_cmap("gist_ncar")(np.linspace(0,1,N)))
     plt.scatter(tsne_total.loc[:,'X0'], tsne_total.loc[:,'X1'], s=2, c=clusters2, cmap=cmap, edgecolors='black', linewidth=0.1)
     plt.colorbar()
-    #plt.xlim(-100, 150)
-    #plt.ylim(-60, 210)
+    plt.xlim(min_x, max_x)
+    plt.ylim(min_y, max_y)
     plt.xlabel("Dimension 1")
     plt.ylabel("Dimension 2")
     plt.title("Final Puzzle Solution")
-    plt.savefig(dir+"/puzzle_solution_final.svg", dpi=500)
+    plt.savefig(dir+"/puzzle_solution_final.png", dpi=500)
     plt.show()
 
     
@@ -1330,16 +2046,17 @@ def main_real():
     os.mkdir(dir)
     
     counts_sp, unique = create_sparse_matrix_from_file(int_path)
+    print("Sparse matrix dimensions: {}".format(counts_sp.shape))
     
     counts_sp, gbr = similarity_distance_mapping(dir, counts_sp)
     
     counts_sp, clusters2, bead_idx, cluster_dict, total_dict, overlapping, boundary_nodes, sparse_df = cluster_beads(counts_sp, gbr)
 
-    overlapping, tsne_scaled, tsne_scaled_orig, clusters2, bead_idx = cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, overlapping, boundary_nodes, sparse_df, dir)
+    overlapping, tsne_scaled, tsne_scaled_orig, clusters2, bead_idx = cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, overlapping, boundary_nodes, sparse_df, dir, unique)
 
     dir, sample_dir, new_dict, overlapping, tsne_scaled_orig, tsne_scaled, bead_idx, N, unique, tsne_stitch = stitch_clusters(overlapping, tsne_scaled, tsne_scaled_orig, clusters2, bead_idx, unique, dir, sample_dir)
 
-    tsne_barcodes, tsne_total = refine_solution(dir, sample_dir, new_dict, overlapping, tsne_scaled_orig, tsne_scaled, bead_idx, N, unique, tsne_stitch)
+    tsne_barcodes, tsne_total = refine_solution(dir, sample_dir, new_dict, overlapping, tsne_scaled_orig, tsne_scaled, bead_idx, N, unique, tsne_stitch, clusters2)
 
     time_end = timeit.default_timer()
     print("Total script time: {}".format(datetime.timedelta(seconds=int(time_end-time_start))))
@@ -1639,17 +2356,19 @@ def main_simulation():
     os.mkdir(dir)
     
     counts_sp, unique = create_sparse_matrix_from_file(int_path, "source_bead", "target_bead", "bead_counts")
+    print("Sparse matrix dimensions: {}".format(counts_sp.shape))
     counts_sp = downsample(counts_sp, pct)
+    print("After downsampling: {}".format(counts_sp.shape))
 
     counts_sp, gbr = similarity_distance_mapping(dir, counts_sp)
     
     counts_sp, clusters2, bead_idx, cluster_dict, total_dict, overlapping, boundary_nodes, sparse_df = cluster_beads(counts_sp, gbr)
 
-    overlapping, tsne_scaled, tsne_scaled_orig, clusters2, bead_idx = cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, overlapping, boundary_nodes, sparse_df, dir)
+    overlapping, tsne_scaled, tsne_scaled_orig, clusters2, bead_idx = cluster_tsne(counts_sp, gbr, clusters2, bead_idx, cluster_dict, total_dict, overlapping, boundary_nodes, sparse_df, dir, unique)
 
     dir, sample_dir, new_dict, overlapping, tsne_scaled_orig, tsne_scaled, bead_idx, N, unique, tsne_stitch = stitch_clusters(overlapping, tsne_scaled, tsne_scaled_orig, clusters2, bead_idx, unique, dir, sample_dir)
 
-    tsne_barcodes, tsne_total = refine_solution(dir, sample_dir, new_dict, overlapping, tsne_scaled_orig, tsne_scaled, bead_idx, N, unique, tsne_stitch)
+    tsne_barcodes, tsne_total = refine_solution(dir, sample_dir, new_dict, overlapping, tsne_scaled_orig, tsne_scaled, bead_idx, N, unique, tsne_stitch, clusters2)
 
     MAE = matching_error(coord_path, tsne_total, dir)
 
