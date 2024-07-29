@@ -9,7 +9,7 @@ The reconstruction of beads location starts with training a distance predictor o
 
 After the locations of beads are determined through reconstruction, the RNA sequences containing barcodes that map them to the beads can be assigned to locations in the array and used for downstream spatial analysis.
 
-### Setting up the conda environment
+### Setting up the environment
 Dependencies of running OFST are listed bellow:
    - python
    - scikit-learn
@@ -18,20 +18,27 @@ Dependencies of running OFST are listed bellow:
 To directly create the conda environment for running OFST, run `conda env create -f ofst.yml`
    
 
-### Error Correction & Creating an interaction matrix
+### Running the scripts
+SLURM scripts for the pipeline are provided. Here's how to run them:
 
-1. **Run `extract_error_correct_sender_receiver.py`**
-
-   ```sh
-   nohup python extract_error_correct_sender_receiver.py R1.fastq.gz R2.fastq.gz corrected.txt corrected.csv > script_output.log 2>&1 &
-2. **Run `UMI_collapse.py`**
+1. **Run `error_correction.sh`**
 
    ```sh
-   python UMI_collapse.py corrected.csv collapsed.csv
-3. **Run `find_interactions.py`**
+   sbatch slurms/error_correction.sh
+   ```
+   This would start processing the paired of sequencing files in parallel. Specify the number of chunks in the script and it will generate the same number of files that contain mapped reads.
+2. **Run `UMI_collapse.sh`**
 
    ```sh
-   python find_interactions.py collapsed.csv index.json subset.csv numerical.txt interaction.txt
+   sbatch slurms/UMI_collapse.sh
+   ```
+   This first merges all output reads file from last step into one and then collapses identical reads which contain the same pairs of UMIs. This would output a reads file with UMI-collpased reads and a knee plot showing the distribution of barcodes interaction counts.
+3. **Run `find_interaction.sh`**
+
+   ```sh
+   sbatch slurms/find_interaction.sh
+   ```
+   The input to this step is the UMI-collapsed reads file. User also need to provide a threshold for filtering barcodes by their interaction counts with other barcodes. This threshold can be set by determining the knee point from the knee plot output by last step. The output of this step are a sparse matrix of barcode interactions, a dictionary that maps barcode sequences to indices and a plot of barcodes interactions of randomly selected barcodes.  
 
 ### Doublets Detection
 1. **Run `doublet_detection.py`**
