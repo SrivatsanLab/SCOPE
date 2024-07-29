@@ -1,11 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=UMI_collapse
-#SBATCH --output=UMI_collapse.out
-#SBATCH --error=UMI_collapse.err
-#SBATCH --time=12:00:00
-#SBATCH --mem=10G
-#SBATCH --partition=campus-new
-#SBATCH --mail-type=END,FAIL    
-#SBATCH --mail-user=yhuang5@fredhutch.org
 
-python UMI_collapse.py chunks_output_new/merged_output.csv chunks_output_new/collapsed.csv chunks_output_new/collapsed.png
+# Your SBATCH parameters here
+
+
+DIR="../test"
+MERGED_OUTPUT="${DIR}/merged_output.csv"
+
+# Merge all individual output files into a single file
+cat ${DIR}/output_*.csv > $MERGED_OUTPUT
+
+# Perform UMI collapsing on the merged output file
+python UMI_collapse.py ${DIR}/merged_output.csv ${DIR}/collapsed.csv ${DIR}/collapsed.png
