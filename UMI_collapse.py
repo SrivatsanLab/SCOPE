@@ -12,10 +12,6 @@ def collapse_UMIs(library_csv, output_file, output_plot):
     
     print(f"library loaded; time taken: {time.time() - start_1}")
 
-    # Display the first 10 lines of the dataframe
-    print("First 10 lines of the dataframe:")
-    print(library.head(10))
-
     pre_collapse_len = len(library)
     print(f"pre-collapse: {pre_collapse_len}")
     
