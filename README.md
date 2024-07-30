@@ -39,15 +39,17 @@ SLURM scripts for the pipeline are provided. Here's how to run them:
    sbatch slurms/find_interaction.sh
    ```
    The input to this step is the UMI-collapsed reads file. User also need to provide a threshold for filtering barcodes by their interaction counts with other barcodes. This threshold can be set by determining the knee point from the knee plot output by last step. The output of this step are a sparse matrix of barcode interactions, a dictionary that maps barcode sequences to indices and a plot of barcodes interactions of randomly selected barcodes.  
-
-### Doublets Detection
-1. **Run `doublet_detection.py`**
+4. **Run `doublet_detection.sh`**
 
    ```sh
-   python doublet_detection.py interaction_graph.graphml 1000 doublets.csv
+   sbatch slurms/doublet_detection.sh
+   ```
+   The purpose of this step is to remove doublets (pairs of beads that share the same barcodes) exsiting in the array that might potentially affect the reconstruction results. The input to this step is a sparse matrix of barcode interactions; the output is a sparse matrix of bead interactions with doublets removed.
+5. **Run `reconstruction.sh`**
 
-### Reconstruction of Beads Location
-1. **Run `optics-free.py`**
-
+   ```sh
+   sbatch slurms/reconstruction.sh
+   ```
+   The input to this step is a sparse matrix of bead interactions (ideally with doublets removed). It outputs a plot showing the location reconstruction of beads and a file that contains the predicted coordinates of beads in the array.
    ```sh
    python optics-free.py -s sample_id -i interaction.csv
