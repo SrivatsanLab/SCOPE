@@ -51,5 +51,4 @@ SLURM scripts for the pipeline are provided. Here's how to run them:
    sbatch slurms/reconstruction.sh
    ```
    The input to this step is a sparse matrix of bead interactions (ideally with doublets removed). It outputs a plot showing the location reconstruction of beads and a file that contains the predicted coordinates of beads in the array.
-   ```sh
-   python optics-free.py -s sample_id -i interaction.csv
+
