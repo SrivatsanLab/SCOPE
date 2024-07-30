@@ -44,7 +44,7 @@ SLURM scripts for the pipeline are provided. Here's how to run them:
    ```sh
    sbatch slurms/doublet_detection.sh
    ```
-   The purpose of this step is to remove doublets (pairs of beads that share the same barcodes) exsiting in the array that might potentially affect the reconstruction results. The input to this step are a sparse matrix of barcode interactions and a list indicating the search space of resolutions for performing leiden clustering; the output is a sparse matrix of bead interactions with doublets removed.e
+   The purpose of this step is to remove doublets (pairs of beads that share the same barcodes) exsiting in the array that might potentially affect the reconstruction results. The input to this step are a sparse matrix of barcode interactions and a list indicating the search space of resolutions for performing leiden clustering; the output is a sparse matrix of bead interactions with doublets removed.
 5. **Run `reconstruction.sh`**
 
    ```sh
