@@ -6,6 +6,7 @@ from scipy.sparse import csr_matrix
 import pandas as pd
 import numpy as np
 import math
+import ast
 
 
 def expected_doublets_number(n, N=96 ** 4):
@@ -90,7 +91,7 @@ def doublet_detection_grid_resolution(G, searchspace):
     threshold = get_highest_50_percent_cutoff(all_lens)
     expected_num = expected_doublets_number(len(G.vs.indices), N=96 ** 4)
     all_doublets = []
-
+    
     for i in searchspace:
         all_doublets.append(doublet_detection(G, threshold, i))
         
@@ -109,7 +110,8 @@ counts_sp = create_sparse_matrix(df)
 
 G = ig.Graph.Weighted_Adjacency(counts_sp, mode=ig.ADJ_UNDIRECTED)
 
-searchspace = sys.argv[2]
+searchspace = ast.literal_eval(sys.argv[2])
+print(searchspace)
 
 doublets_detected = doublet_detection_grid_resolution(G, searchspace)
 
