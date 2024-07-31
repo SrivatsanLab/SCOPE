@@ -57,30 +57,9 @@ interaction_df['R2_full_bc'] = interaction_df['R2_full_bc'].apply(replace_with_i
 interaction_df.to_csv(sys.argv[3], index=False)
 
 
-
-# Read the CSV file without headers
-df = pd.read_csv(sys.argv[4], header=None)
-
-# Apply the barcode to integer mapping to the first column
-df[0] = df[0].map(barcode_to_integer_mapping)
-
-# Remove rows with NaN values (unmapped barcodes)
-df.dropna(subset=[0], inplace=True)
-
-# Convert the first column to integers
-df[0] = df[0].astype(int)
-
-# Display the first few rows to verify the mapping
-print(df.head())
-
-# Save the modified dataframe to a new CSV file
-df.to_csv(sys.argv[5], index=False, header=False)
-
-
-
 # write a json file with barcode to numerical index matching
 
-with open(sys.argv[6], "w") as f:
+with open(sys.argv[4], "w") as f:
      f.write(json.dumps(barcode_to_integer_mapping))
 
 
@@ -106,7 +85,7 @@ for i in range(sampled_num):
     
 plt.tight_layout()
 
-plt.savefig(sys.argv[7], format='png')
+plt.savefig(sys.argv[5], format='png')
 
 
 """
@@ -114,10 +93,8 @@ plt.savefig(sys.argv[7], format='png')
 sys.argv[1]: deduplicated lib to load (.csv)
 sys.argv[2]: threshold for filtering barcodes (int)
 sys.argv[3]: interactions.csv output filename (.csv)
-sys.argv[4]: 
-sys.argv[5]: 
-sys.argv[6]: output .json file with barcode to numerical index matching (.json)
-sys.argv[7]: output plot for the iteraction distribution of 18 randomly selected beads  (.png)
+sys.argv[4]: output .json file with barcode to numerical index matching (.json)
+sys.argv[5]: output plot for the iteraction distribution of 18 randomly selected beads  (.png)
 
 """
 
