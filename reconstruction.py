@@ -84,7 +84,7 @@ def flatten(xss):
     return [x for xs in xss for x in xs]
 
 
-def create_sparse_matrix_from_file(file_path, r1='R1_full_bc', r2='R2_full_bc', count='count'):
+def create_sparse_matrix_from_file(file_path, r1='R1_full_bc_sequence', r2='R2_full_bc_sequence', count='count'):
     if file_path.endswith(".csv"):
         df = pd.read_csv(file_path)
     else:
@@ -138,15 +138,16 @@ def similarity_distance_mapping(dir, counts_sp):
     sim_df['row_sums'] = rowsums
     sim_df['col_sums'] = colsums
 
-    '''
+    
     simulator = BaseSimulation(50, 50, max_dispersion_radius=50, max_dispersion_scale=50, joint_sums=sim_df)
     counts = simulator.simulate_experiment()#rowsums)
     coords = simulator.add_coords(simulator.bead_df)
+    
     '''
     simulator = BaseSimulation(50, 50, max_dispersion_radius=50, max_dispersion_scale=50)
     counts = simulator.simulate_experiment(rowsums)
     coords = simulator.add_coords(simulator.bead_df)
-    
+    '''
     X_orig = coords[['x_coord','y_coord']].values
     true_dist = pairwise_distances(X_orig, metric='euclidean', n_jobs=-1)
     counts = counts.pivot(index='source_bead', columns='target_bead', values='bead_counts')
@@ -258,7 +259,7 @@ def similarity_distance_mapping(dir, counts_sp):
     return counts_sp, gbr
 
 
-def cluster_beads(counts_sp, gbr, threshold=0.25):
+def cluster_beads(counts_sp, gbr, threshold=0.3):
     G = igraph.Graph.Weighted_Adjacency(counts_sp)
     bead_idx = np.array(list(range(counts_sp.shape[0])))
     
