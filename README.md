@@ -13,8 +13,17 @@ After the locations of beads are determined through reconstruction, the RNA sequ
 Dependencies of running OFST are listed bellow:
    - python
    - scikit-learn
-   - ......
-   
+   - alphashape
+   - igraph
+   - leidenalg
+   - matplotlib
+   - pandas
+   - python-igraph
+   - python-levenshtein
+   - tqdm
+   - scikit-image
+   - scanpy
+
 To directly create the conda environment for running OFST, run `conda env create -f ofst.yml`
    
 
