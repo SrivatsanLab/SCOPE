@@ -3,13 +3,15 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python-levenshtein
-  - pandas
-  - matplotlib
-  - scikit-learn
-  - igraph
-  - python-igraph
-  - leidenalg
-  - tqdm
   - alphashape
-prefix: /home/yhuang5/miniconda3/envs/spacev2
+  - igraph
+  - leidenalg
+  - matplotlib
+  - pandas
+  - python-igraph
+  - python-levenshtein
+  - scikit-learn
+  - tqdm
+  - scikit-image
+  - scanpy
+prefix: /home/yhuang5/miniconda3/envs/ofst
