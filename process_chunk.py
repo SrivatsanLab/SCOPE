@@ -2,8 +2,6 @@ import gzip
 import numpy as np
 import sys
 from Levenshtein import distance
-from collections import defaultdict
-import pandas as pd
 
 """load correct barcodes"""
 BC_1s = list()
@@ -35,8 +33,8 @@ with open("test/SRs.txt", "r") as f:
 print("Barcodes and SR sequences loaded")
 
 
-# SR_map = {SRs[i]: SRs[i+20] for i in range(20)}
-# SR_map.update({SRs[i+20]: SRs[i] for i in range(20)})
+SR_map = {SRs[i]: SRs[i+20] for i in range(20)}
+SR_map.update({SRs[i+20]: SRs[i] for i in range(20)})
     
 
 def pairwise_levenshtein_distances(string, vector_of_strings):
@@ -187,9 +185,8 @@ if __name__ == "__main__":
     R1_filename = sys.argv[1]
     R2_filename = sys.argv[2]
     output_filename = sys.argv[3]
-    dict_filename = sys.argv[4]
-    start_sequence = int(sys.argv[5])
-    num_sequences = int(sys.argv[6])
+    start_sequence = int(sys.argv[4])
+    num_sequences = int(sys.argv[5])
     
     process_chunk(R1_filename, R2_filename, output_filename, start_sequence, num_sequences)
 
