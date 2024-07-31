@@ -48,7 +48,7 @@ SLURM scripts for the pipeline and test data for running them are provided. Here
    sbatch slurms/find_interaction.sh
    ```
    The input to this step is the UMI-collapsed reads file. Users also need to provide a threshold for filtering barcodes by their interaction counts with other barcodes. This threshold can be set by determining the knee point from the knee plot output by last step. The output of this step are a sparse matrix of barcode interactions, a dictionary that maps barcode sequences to indices and a plot of barcodes interactions of randomly selected barcodes.  
-4. **Run `doublet_detection.sh`**
+4. **Run `doublet_detection.sh`** (optional)
 
    ```sh
    sbatch slurms/doublet_detection.sh
