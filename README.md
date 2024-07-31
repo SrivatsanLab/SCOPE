@@ -28,7 +28,7 @@ To directly create the conda environment for running OFST, run `conda env create
    
 
 ### Running the scripts
-SLURM scripts for the pipeline are provided. Here's how to run them:
+SLURM scripts for the pipeline and test data for running them are provided. Here's how to run them:
 
 1. **Run `error_correction.sh`**
 
