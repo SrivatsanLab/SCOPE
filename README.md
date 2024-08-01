@@ -7,6 +7,8 @@ In OFST workflow, we start with sequencing reads of both RNA sequences and SR se
 
 The reconstruction of beads location starts with training a distance predictor on the input bead interaction data. Specifically, the bead interaction matrix obtained in the last step is fed into a dispersion simulator, which simulates some beads interaction data of the same distirbution, with ground truth locations of beads. We then train a random forest regressor on the simulated data, which is used to predict a distance matrix of the real data based on the interaction matrix. The next step is to cluster beads based on the interaction matrix and perform t-SNE onthe distance matrix for each single cluster to perform location reconstruction. Finally, all clusters of beads are stitched together through beads on the boundaries.
 
+![Example Image](https://github.com/SrivatsanLab/OFST/blob/main/puzzle_solution_final.png?raw=true)
+
 After the locations of beads are determined through reconstruction, the RNA sequences containing barcodes that map them to the beads can be assigned to locations in the array and used for downstream spatial analysis.
 
 ### Setting up the environment
