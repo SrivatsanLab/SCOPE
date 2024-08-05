@@ -7,7 +7,7 @@ The OFST/SCOPE platform is built on an array of densely packed 20µm polyacrylam
 
 In the above workflow, we begin by sequencing RNA and SR reads. All SR reads contain the combined barcodes from the sending and receiving beads. Thus, each pair of sequenced reads represents an interaction between two beads. To account for substitutions, insertions, and deletions, sequencing reads are input into a preprocessing pipeline (see below) which performs error-mapping and decoding. This outputs a barcode interaction matrix recording the counts of interactions between all pairs of barcodes. 
 
-Next, we perform doublet detection on the interaction matrix. Doublets occur when multiple hydrogel beads contain identical barcodes. Doublets are either removed or split into separate beads.
+Next, we perform doublet detection on the interaction matrix. Doublets occur when multiple hydrogel beads contain identical barcodes. Once doublets are detected, they are removed from the interaction matrix.
 
 ![Example Image](https://github.com/SrivatsanLab/OFST/blob/main/puzzle_solution_final.png?raw=true)
 
