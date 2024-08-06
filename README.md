@@ -3,17 +3,17 @@ SCOPE uses proximity interactions between the DNA barcodes to computationally in
 
 The OFST/SCOPE platform is built on an array of densely packed 20µm polyacrylamide hydrogel beads. Each bead contains 100µM 5'-acrydite oligos -- a portion of which can be programmatically cleaved by an enzymatic reaction. Cleaved oligo barcodes, termed 'senders' can diffuse freely and hybridize to tethered oligo barcodes, 'receivers', on proximal beads. Cleaved senders will diffuse radially such that receiver oligos on proximal beads will have many more sender-receiver (SR) reactions than receiver oligos on distal beads. Thus, the spatial relationships between beads are reflected in the magnitude and proportion of respective SR reactions. The beads that contribute to these reactions are identified by sequencing the hybridized sender-receiver oligos. 
 
-![Example Image](https://github.com/SrivatsanLab/OFST/blob/main/OFST-diagram.png?raw=true)
+![Example Image](https://raw.githubusercontent.com/SrivatsanLab/SCOPE/main/OFST-diagram.png)
 
 In the above workflow, we begin by sequencing RNA and SR reads. All SR reads contain the combined barcodes from the sending and receiving beads. Thus, each pair of sequenced reads represents an interaction between two beads. To account for substitutions, insertions, and deletions, sequencing reads are input into a preprocessing pipeline (see below) which performs error-mapping and decoding. This outputs a barcode interaction matrix recording the counts of interactions between all pairs of barcodes. 
 
 Next, we perform doublet detection on the interaction matrix. Doublets occur when multiple hydrogel beads contain identical barcodes. Once doublets are detected, they are removed from the interaction matrix.
 
-![Example Image](https://github.com/SrivatsanLab/OFST/blob/main/puzzle_solution_final.png?raw=true)
+![Example Image](https://raw.githubusercontent.com/SrivatsanLab/SCOPE/main/puzzle_solution_final.png)
 
 Spatial reconstruction of the bead array begins with training a distance predictor on a subset of the bead interaction data. Specifically, the bead interaction matrix obtained in the previous step is fed into a dispersion simulator which simulates bead interaction data of the same distribution along with ground truth locations of beads. We then train a random forest regressor on the simulated data, which predicts a distance matrix of the real data based on the interaction matrix. Next, we cluster beads based on the interaction matrix and perform t-SNE on the distance matrix of each cluster to perform local reconstruction. Finally, all bead clusters are stitched together using beads along the outer boundaries.
 
-![Example Image](https://github.com/SrivatsanLab/OFST/blob/main/RNA-beads-connection.png?raw=true)
+![Example Image](https://raw.githubusercontent.com/SrivatsanLab/SCOPE/main/RNA-beads-connection.png)
 
 After the bead locations are reconstructed, the RNA sequences associated with each bead are assigned to spatial positions in the array and used for downstream spatial transcriptomics.
 
