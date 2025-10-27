@@ -5,5 +5,5 @@
 
 DIR="test"
 
-python reconstruction.py -s ${DIR}/results -i ${DIR}/interaction.csv
+python reconstruction.py -s ${DIR}/results -i ${DIR}/interaction.csv -m 2501 -n 10000
 
