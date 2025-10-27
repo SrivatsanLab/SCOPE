@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Your SBATCH parameters here
+#SBATCH --cpus-per-task=24
 
 DIR="test"
 
